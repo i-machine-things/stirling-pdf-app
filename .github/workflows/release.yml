@@ -34,6 +34,10 @@ jobs:
     runs-on: ${{ matrix.os }}
 
     steps:
+      - name: Show rehearsal label
+        if: github.event_name == 'workflow_dispatch'
+        run: echo "Rehearsal label: ${{ inputs.tag }} (not an actual tag — see .claude/CLAUDE.md 'Rehearse before releasing')" >> "$GITHUB_STEP_SUMMARY"
+
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           persist-credentials: false
@@ -46,6 +50,8 @@ jobs:
 
       - name: Fetch backend jar
         shell: bash
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: ./scripts/fetch-backend.sh
 
       - name: Install dependencies

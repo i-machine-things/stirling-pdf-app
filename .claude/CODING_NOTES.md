@@ -115,3 +115,12 @@ This note was created based on issues encountered with PyInstaller executables r
 ## Shell Scripts
 
 - **Don't write to a hardcoded, predictable path under `/tmp`.** On a shared machine another local user can pre-create that exact path (as a file or a symlink elsewhere) before your script runs, letting them read what you write or redirect it to overwrite something else (CWE-377). Use `mktemp` to get a unique, unpredictable path, and `trap 'rm -f "$tmpfile"' EXIT` to clean it up regardless of how the script exits.
+- **Pass `GITHUB_TOKEN` to anonymous GitHub API calls made from CI, keep it optional for local use.** Unauthenticated REST API calls are capped at 60/hour per source IP; GitHub-hosted runners share a large, heavily-used IP pool that commonly already has that quota eaten by unrelated traffic. A transient 403 under `set -euo pipefail` + `curl -f` then kills the whole job for reasons unrelated to the actual code. The job already has `GITHUB_TOKEN` available (even if only used elsewhere) — pass it as an `Authorization: Bearer` header when set, and just fall back to anonymous when it isn't (e.g. a developer running the same script locally).
+
+## Electron Main Process
+
+- **`app.whenReady().then(boot)` needs a `.catch()`.** If anything inside `boot()` throws before the window is created (e.g. `fs.mkdirSync` failing on a userData subdirectory with restricted ACLs), that's an unhandled promise rejection — the app just sits running with no window, no dialog, and no clue why. Show the same kind of error dialog used for other startup failures (e.g. the spawn-failure path) and quit, rather than failing silently.
+
+## GitHub Actions Workflow Inputs
+
+- **A declared `workflow_dispatch` input that nothing references is misleading, not harmless.** Someone supplying `-f tag=v9.9.9-test` reasonably expects it to show up somewhere (artifact names, release notes, logs) — if it's silently dropped, the run looks like it respected their input when it didn't. Either wire it into the job for real, or at minimum surface it in the job summary so it's visibly acknowledged instead of silently ignored.

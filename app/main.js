@@ -168,7 +168,13 @@ if (!gotLock) {
     }
   });
 
-  app.whenReady().then(boot);
+  app.whenReady().then(boot).catch((err) => {
+    // boot() can throw before createWindow() runs (e.g. mkdirSync failing on
+    // BACKEND_WORKDIR) — without this, that's an unhandled rejection and the
+    // app just sits running with no window and no indication why.
+    dialog.showErrorBox('Stirling PDF', `Failed to start: ${err.message}`);
+    app.quit();
+  });
 
   app.on('window-all-closed', () => {
     killBackend();

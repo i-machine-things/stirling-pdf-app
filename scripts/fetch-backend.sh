@@ -11,7 +11,16 @@ cd "$BACKEND_DIR"
 echo "Fetching latest Stirling-PDF release info..."
 RELEASE_JSON="$(mktemp)"
 trap 'rm -f "$RELEASE_JSON"' EXIT
-curl -fsSL https://api.github.com/repos/Stirling-Tools/Stirling-PDF/releases/latest -o "$RELEASE_JSON"
+
+# Anonymous GitHub API calls are capped at 60/hour per IP — easy to exhaust on a
+# shared CI runner IP. Use GITHUB_TOKEN when it's set (CI always has one; local
+# dev usually doesn't and that's fine, just a lower anonymous rate limit).
+AUTH_ARGS=()
+if [ -n "${GITHUB_TOKEN:-}" ]; then
+  AUTH_ARGS=(-H "Authorization: Bearer ${GITHUB_TOKEN}")
+fi
+
+curl -fsSL "${AUTH_ARGS[@]}" https://api.github.com/repos/Stirling-Tools/Stirling-PDF/releases/latest -o "$RELEASE_JSON"
 
 URL=$(grep -o '"browser_download_url": *"[^"]*Stirling-PDF\.jar"' "$RELEASE_JSON" | sed -E 's/.*"(https[^"]+)"/\1/')
 
