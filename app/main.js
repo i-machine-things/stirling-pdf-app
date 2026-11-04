@@ -20,7 +20,10 @@ const BACKEND_WORKDIR = app.isPackaged
   ? path.join(app.getPath('userData'), 'backend')
   : path.join(__dirname, '..', 'backend');
 
-const APP_URL = 'http://localhost:8080';
+// Loopback-only: the no-login backend has no auth, so it must not be reachable
+// from other devices on the network while the app is running.
+const BACKEND_ADDRESS = '127.0.0.1';
+const APP_URL = `http://${BACKEND_ADDRESS}:8080`;
 const LOG_FILE = path.join(BACKEND_WORKDIR, 'stirling-backend.log');
 const READY_TIMEOUT_MS = 30000;
 const POLL_INTERVAL_MS = 500;
@@ -40,19 +43,27 @@ function startBackend() {
   const javaBin = resolveJavaBin();
   const logStream = fs.createWriteStream(LOG_FILE, { flags: 'a' });
 
-  backendProcess = spawn(javaBin, ['-jar', BACKEND_JAR], {
+  backendProcess = spawn(javaBin, ['-jar', BACKEND_JAR, `--server.address=${BACKEND_ADDRESS}`], {
     cwd: BACKEND_WORKDIR,
     stdio: ['ignore', 'pipe', 'pipe'],
   });
 
-  backendProcess.stdout.pipe(logStream);
-  backendProcess.stderr.pipe(logStream);
+  // { end: false } so one stream finishing (e.g. stdout at exit) doesn't end
+  // logStream while the other is still writing — that would throw a
+  // write-after-end error with no handler for it. Close logStream ourselves
+  // once the child is fully gone instead.
+  backendProcess.stdout.pipe(logStream, { end: false });
+  backendProcess.stderr.pipe(logStream, { end: false });
 
   backendProcess.on('exit', (code, signal) => {
-    backendProcess = null;
     if (code !== null && code !== 0) {
       console.error(`Stirling-PDF backend exited with code ${code} (signal ${signal})`);
     }
+  });
+
+  backendProcess.on('close', () => {
+    backendProcess = null;
+    logStream.end();
   });
 
   backendProcess.on('error', (err) => {
@@ -64,9 +75,23 @@ function waitForBackend(timeoutMs) {
   const deadline = Date.now() + timeoutMs;
   return new Promise((resolve) => {
     function poll() {
+      // If the child already died (crash, bad jar, port in use) there's no point
+      // continuing to poll until the timeout — bail out immediately.
+      if (!backendProcess) {
+        resolve(false);
+        return;
+      }
       const req = http.get(APP_URL, (res) => {
         res.resume();
-        resolve(true);
+        // Only a real 200 counts as "ready" — a transient error response during
+        // startup (or anything else on this port) must not end the poll early.
+        if (res.statusCode === 200) {
+          resolve(true);
+        } else if (Date.now() > deadline) {
+          resolve(false);
+        } else {
+          setTimeout(poll, POLL_INTERVAL_MS);
+        }
       });
       req.on('error', () => {
         if (Date.now() > deadline) {

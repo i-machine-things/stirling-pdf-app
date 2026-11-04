@@ -16,6 +16,9 @@ on:
         required: true
         default: 'v0.0.0-rehearsal'
 
+permissions:
+  contents: read
+
 jobs:
   build:
     name: Build (${{ matrix.os }})
@@ -31,11 +34,11 @@ jobs:
     runs-on: ${{ matrix.os }}
 
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           persist-credentials: false
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: '22'
           cache: 'npm'
@@ -53,7 +56,7 @@ jobs:
         working-directory: app
         run: npx electron-builder --publish never
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: ${{ matrix.artifact-name }}
           path: ${{ matrix.artifact-glob }}
@@ -68,17 +71,19 @@ jobs:
       contents: write
 
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           path: artifacts
 
       - name: Create release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_TAG: ${{ github.ref_name }}
+          RELEASE_REPO: ${{ github.repository }}
         run: |
-          gh release create "${{ github.ref_name }}" \
+          gh release create "$RELEASE_TAG" \
             artifacts/windows-installer/* \
             artifacts/linux-appimage/* \
-            --repo "${{ github.repository }}" \
-            --title "${{ github.ref_name }}" \
+            --repo "$RELEASE_REPO" \
+            --title "$RELEASE_TAG" \
             --generate-notes

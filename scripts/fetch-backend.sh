@@ -9,9 +9,11 @@ mkdir -p "$BACKEND_DIR"
 cd "$BACKEND_DIR"
 
 echo "Fetching latest Stirling-PDF release info..."
-curl -fsSL https://api.github.com/repos/Stirling-Tools/Stirling-PDF/releases/latest -o /tmp/stirling-release.json
+RELEASE_JSON="$(mktemp)"
+trap 'rm -f "$RELEASE_JSON"' EXIT
+curl -fsSL https://api.github.com/repos/Stirling-Tools/Stirling-PDF/releases/latest -o "$RELEASE_JSON"
 
-URL=$(grep -o '"browser_download_url": *"[^"]*Stirling-PDF\.jar"' /tmp/stirling-release.json | sed -E 's/.*"(https[^"]+)"/\1/')
+URL=$(grep -o '"browser_download_url": *"[^"]*Stirling-PDF\.jar"' "$RELEASE_JSON" | sed -E 's/.*"(https[^"]+)"/\1/')
 
 if [ -z "$URL" ]; then
   echo "ERROR: could not find Stirling-PDF.jar asset in the latest release" >&2

