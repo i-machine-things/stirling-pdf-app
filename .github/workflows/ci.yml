@@ -1,0 +1,121 @@
+# CI checks in this template are a starting point, not a fixed set of tools.
+# gitleaks stays as-is (secret-scanning is language-agnostic). The Python-specific
+# lint/security/test jobs from the upstream .claude template are swapped here for
+# this project's actual stack: Node.js/Electron.
+
+name: CI
+
+on:
+  pull_request:
+    branches: [master, stable]
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # Secret scanning — gitleaks. Language-agnostic: keep this job as-is in
+  # every downstream repo regardless of stack.
+  # ---------------------------------------------------------------------------
+  secrets:
+    name: Secret scan (gitleaks)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+
+      - name: Install gitleaks
+        env:
+          GITLEAKS_VERSION: 8.30.1
+        run: |
+          base="https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}"
+          curl -sSfLO "${base}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
+          curl -sSfLO "${base}/gitleaks_${GITLEAKS_VERSION}_checksums.txt"
+          sha256sum --check --ignore-missing "gitleaks_${GITLEAKS_VERSION}_checksums.txt"
+          tar -xzf "gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz" gitleaks
+          sudo mv gitleaks /usr/local/bin/
+
+      - name: Scan PR commits
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: gitleaks git --redact --verbose --log-opts="--diff-merges=first-parent ${BASE_SHA}..${HEAD_SHA}" .
+
+  # ---------------------------------------------------------------------------
+  # Lint & security — eslint + npm audit. Node equivalent of the template's
+  # flake8/bandit job.
+  # ---------------------------------------------------------------------------
+  lint:
+    name: Lint & Security (Node)
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: app/package-lock.json
+
+      - name: Install dependencies
+        working-directory: app
+        run: npm ci
+
+      - name: eslint
+        working-directory: app
+        run: npm run lint
+
+      - name: npm audit
+        working-directory: app
+        run: npm audit --audit-level=high
+
+  # ---------------------------------------------------------------------------
+  # Tests — no unit-test suite yet (thin wrapper around an external jar; the
+  # real validation is launching the app, see .claude/CLAUDE.md Rule 3).
+  # ---------------------------------------------------------------------------
+  test:
+    name: Tests
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: No tests configured
+        run: echo "No unit-test suite for this project — see .claude/CLAUDE.md Rule 3 for how changes are validated instead."
+
+  # ---------------------------------------------------------------------------
+  # Build — fast packaging sanity check (syntax + install), not a full
+  # electron-builder pack (that needs the ~300MB backend jar and platform
+  # build tools; it runs for real in release.yml instead, on every rehearsal
+  # and release, which is a better fit than re-downloading it on every PR).
+  # ---------------------------------------------------------------------------
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: app/package-lock.json
+
+      - name: Install dependencies
+        working-directory: app
+        run: npm ci
+
+      - name: Syntax check main.js
+        working-directory: app
+        run: node --check main.js
+
+      - name: Validate electron-builder config
+        working-directory: app
+        run: npx electron-builder install-app-deps
