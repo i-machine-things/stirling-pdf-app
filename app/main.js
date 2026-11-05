@@ -1,3 +1,8 @@
+const __dbg = (name, data) => { try { require('fs').writeFileSync('C:\\stirling-debug-' + name + '.log', String(data) + '\n', { flag: 'a' }); } catch (e) {} };
+__dbg('top', 'main.js top reached, pid=' + process.pid + ', isPackaged check pending');
+process.on('uncaughtException', (e) => { __dbg('crash', e && e.stack || e); });
+process.on('unhandledRejection', (e) => { __dbg('rejection', e && e.stack || e); });
+process.on('exit', (code) => { __dbg('exit', 'exit event code=' + code); });
 const { app, BrowserWindow, dialog } = require('electron');
 const { spawn } = require('child_process');
 const path = require('path');
@@ -135,8 +140,12 @@ function createWindow() {
 }
 
 async function boot() {
+  __dbg('boot', 'boot() entered, isPackaged=' + app.isPackaged);
   startBackend();
+  __dbg('boot', 'startBackend() returned');
+  __dbg('boot', 'about to createWindow()');
   createWindow();
+  __dbg('boot', 'createWindow() returned');
 
   const ready = await waitForBackend(READY_TIMEOUT_MS);
   if (!mainWindow) return;
