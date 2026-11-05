@@ -36,7 +36,11 @@ jobs:
     steps:
       - name: Show rehearsal label
         if: github.event_name == 'workflow_dispatch'
-        run: echo "Rehearsal label: ${{ inputs.tag }} (not an actual tag — see .claude/CLAUDE.md 'Rehearse before releasing')" >> "$GITHUB_STEP_SUMMARY"
+        env:
+          REHEARSAL_TAG: ${{ inputs.tag }}
+        shell: bash
+        run: |
+          echo "Rehearsal label: $REHEARSAL_TAG (not an actual tag — see .claude/CLAUDE.md 'Rehearse before releasing')" >> "$GITHUB_STEP_SUMMARY"
 
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
