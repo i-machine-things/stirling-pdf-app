@@ -5,10 +5,13 @@ const fs = require('fs');
 const http = require('http');
 const os = require('os');
 
+// disableHardwareAcceleration() alone is the fix for WSLg's GPU process failing
+// to start during dev. Previously this also added --disable-gpu, --disable-
+// software-rasterizer, and --disable-gpu-compositing on top, which removed the
+// software (SwiftShader) fallback too -- on a real desktop GPU that leaves no
+// render path at all, so the app silently exited with no window and no crash
+// log. disableHardwareAcceleration() by itself keeps that fallback available.
 app.disableHardwareAcceleration();
-app.commandLine.appendSwitch('disable-gpu');
-app.commandLine.appendSwitch('disable-software-rasterizer');
-app.commandLine.appendSwitch('disable-gpu-compositing');
 
 // Dev: jar + runtime state both live in ../backend next to this checkout.
 // Packaged: the jar ships read-only as an extraResource; runtime state (configs,
