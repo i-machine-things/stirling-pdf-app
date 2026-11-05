@@ -1,0 +1,95 @@
+# Builds Windows + Linux installers via electron-builder on native runners
+# (no Wine/cross-compile needed). Two ways to run it:
+#   - push a `v*` tag  -> builds AND publishes a GitHub Release (real release)
+#   - workflow_dispatch -> builds the same artifacts but never publishes
+#     (rehearsal mode — see .claude/CLAUDE.md "Rehearse before releasing")
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Version label for this rehearsal build (e.g. v0.1.0) — not an actual git tag'
+        required: true
+        default: 'v0.0.0-rehearsal'
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build (${{ matrix.os }})
+    strategy:
+      matrix:
+        include:
+          - os: windows-latest
+            artifact-glob: app/dist/*.exe
+            artifact-name: windows-installer
+          - os: ubuntu-latest
+            artifact-glob: app/dist/*.AppImage
+            artifact-name: linux-appimage
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - name: Show rehearsal label
+        if: github.event_name == 'workflow_dispatch'
+        run: echo "Rehearsal label: ${{ inputs.tag }} (not an actual tag — see .claude/CLAUDE.md 'Rehearse before releasing')" >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: app/package-lock.json
+
+      - name: Fetch backend jar
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: ./scripts/fetch-backend.sh
+
+      - name: Install dependencies
+        working-directory: app
+        run: npm ci
+
+      - name: Build installer
+        working-directory: app
+        run: npx electron-builder --publish never
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: ${{ matrix.artifact-name }}
+          path: ${{ matrix.artifact-glob }}
+          retention-days: 30
+
+  release:
+    name: Publish GitHub Release
+    needs: build
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          path: artifacts
+
+      - name: Create release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_TAG: ${{ github.ref_name }}
+          RELEASE_REPO: ${{ github.repository }}
+        run: |
+          gh release create "$RELEASE_TAG" \
+            artifacts/windows-installer/* \
+            artifacts/linux-appimage/* \
+            --repo "$RELEASE_REPO" \
+            --title "$RELEASE_TAG" \
+            --generate-notes
